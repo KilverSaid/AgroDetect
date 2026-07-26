@@ -30,9 +30,9 @@ DEFAULT_UMBRAL = 0.60
 
 
 def generar_recomendacion_ia(enfermedad, probabilidad):
-    """Selecciona dinámicamente el modelo Flash disponible en la API Key."""
+    """Obtiene automáticamente un modelo válido disponible en la API Key."""
     if not gemini_disponible:
-        return "⚠️ La integración con Gemini no está disponible. Verifica tu API Key en Secrets."
+        return "⚠️ La integración con Gemini no está disponible. Verifica tu API Key en los Secrets de Streamlit."
 
     prompt = f"""
     Eres un agrónomo experto en el cultivo de café en Honduras.
@@ -49,23 +49,30 @@ def generar_recomendacion_ia(enfermedad, probabilidad):
     Mantén un tono profesional, accesible y práctico.
     """
 
-    # 1. Obtener la lista de modelos permitidos para tu API Key
-    modelos = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-    
-    # 2. Buscar preferentemente un modelo 'flash' o tomar el primero disponible
-    modelo_elegido = None
-    for m in modelos:
-        if 'flash' in m:
-            modelo_elegido = m
-            break
-    
-    if not modelo_elegido and modelos:
-        modelo_elegido = modelos[0]
+    try:
+        # 1. Consultar dinámicamente qué modelos soportan generación de contenido en tu API Key
+        modelos_disponibles = [
+            m.name for m in genai.list_models() 
+            if 'generateContent' in m.supported_generation_methods
+        ]
+        
+        # 2. Priorizar modelos tipo 'flash' si están en la lista; si no, tomar el primero de la lista
+        modelo_elegido = None
+        for m in modelos_disponibles:
+            if 'flash' in m:
+                modelo_elegido = m
+                break
+        
+        if not modelo_elegido and modelos_disponibles:
+            modelo_elegido = modelos_disponibles[0]
 
-    # 3. Generar la respuesta
-    model = genai.GenerativeModel(modelo_elegido)
-    response = model.generate_content(prompt)
-    return response.text
+        # 3. Generar la recomendación con el modelo resuelto dinámicamente
+        model = genai.GenerativeModel(modelo_elegido)
+        response = model.generate_content(prompt)
+        return response.text
+
+    except Exception as e:
+        return f"Error al seleccionar o consultar el modelo de Gemini: {e}"
 
 @st.cache_resource
 def cargar_modelo_y_config():
