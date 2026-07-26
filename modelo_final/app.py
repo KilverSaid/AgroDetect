@@ -30,7 +30,7 @@ DEFAULT_UMBRAL = 0.60
 
 
 def generar_recomendacion_ia(enfermedad, probabilidad):
-    """Obtiene automáticamente un modelo válido disponible en la API Key."""
+    """Genera recomendaciones agronómicas probando modelos vigentes con fallback."""
     if not gemini_disponible:
         return "⚠️ La integración con Gemini no está disponible. Verifica tu API Key en los Secrets de Streamlit."
 
@@ -49,28 +49,40 @@ def generar_recomendacion_ia(enfermedad, probabilidad):
     Mantén un tono profesional, accesible y práctico.
     """
 
+    # Lista de nombres exactos de modelos vigentes
+    candidatos_modelos = [
+        "gemini-1.5-flash",
+        "gemini-1.5-pro",
+        "gemini-1.0-pro"
+    ]
+
+    # Intentar obtener modelos activos dinámicamente si es posible
     try:
-        # 1. Consultar dinámicamente qué modelos soportan generación de contenido en tu API Key
-        modelos_disponibles = [
-            m.name for m in genai.list_models() 
-            if 'generateContent' in m.supported_generation_methods
-        ]
-        
-        # 2. Priorizar modelos tipo 'flash' si están en la lista; si no, tomar el primero de la lista
-        modelo_elegido = None
-        for m in modelos_disponibles:
-            if 'flash' in m:
-                modelo_elegido = m
-                break
-        
-        if not modelo_elegido and modelos_disponibles:
-            modelo_elegido = modelos_disponibles[0]
+        modelos_remotos = []
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                # Quitar el prefijo "models/" si viene incluido
+                nombre_limpio = m.name.replace("models/", "")
+                # Ignorar modelos deprecados conocidos
+                if not any(deprecated in nombre_limpio for deprecated in ["2.5", "0.0.1"]):
+                    modelos_remotos.append(nombre_limpio)
+        if modelos_remotos:
+            candidatos_modelos = modelos_remotos + candidatos_modelos
+    except Exception:
+        pass
 
-        # 3. Generar la recomendación con el modelo resuelto dinámicamente
-        model = genai.GenerativeModel(modelo_elegido)
-        response = model.generate_content(prompt)
-        return response.text
+    # Recorrer la lista e intentar generar contenido
+    ultimo_error = None
+    for nombre_modelo in candidatos_modelos:
+        try:
+            model = genai.GenerativeModel(nombre_modelo)
+            response = model.generate_content(prompt)
+            return response.text
+        except Exception as e:
+            ultimo_error = e
+            continue
 
+    return f"Error al generar recomendación con Gemini: {ultimo_error}"
     except Exception as e:
         return f"Error al seleccionar o consultar el modelo de Gemini: {e}"
 
