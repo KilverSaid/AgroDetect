@@ -4,7 +4,7 @@ import numpy as np
 import streamlit as st
 import tensorflow as tf
 from PIL import Image
-from openai import OpenAI
+from google import genai
 
 # 1. Configuración de página (SIEMPRE PRIMERA LÍNEA DE STREAMLIT)
 st.set_page_config(
@@ -13,8 +13,8 @@ st.set_page_config(
     layout="centered"
 )
 
-# Inicializar cliente de OpenAI desde Streamlit Secrets
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+# Inicializar cliente de Google Gemini usando la clave almacenada en Streamlit Secrets
+client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
 
 # Constantes predeterminadas
 DEFAULT_CLASSES = ["sana", "roya", "cercospora", "phoma", "arana_roja", "minador"]
@@ -23,7 +23,7 @@ DEFAULT_UMBRAL = 0.60
 
 
 def generar_recomendacion_ia(enfermedad, probabilidad):
-    """Genera recomendaciones agronómicas personalizadas mediante OpenAI."""
+    """Genera recomendaciones agronómicas personalizadas mediante Gemini 2.5 Flash."""
     prompt = f"""
     Eres un agrónomo experto en el cultivo de café en Honduras.
     Un modelo de visión por computadora identificó la siguiente afección en una hoja de café:
@@ -39,15 +39,11 @@ def generar_recomendacion_ia(enfermedad, probabilidad):
     Mantén un tono profesional, accesible y práctico.
     """
 
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "Eres un asistente técnico especializado en fitopatología del café."},
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.4
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt
     )
-    return response.choices[0].message.content
+    return response.text
 
 
 @st.cache_resource
@@ -190,11 +186,10 @@ if uploaded_file is not None:
             st.write(f"• **{etiqueta}:** `{pct_val:.2%}`")
             st.progress(pct_val)
 
-    # --- SECCIÓN DE RECOMENDACIÓN TÉCNICA VÍA OPENAI ---
-    # Se despliega en ancho completo debajo de las columnas
+    # --- SECCIÓN DE RECOMENDACIÓN TÉCNICA VÍA GEMINI ---
     if confianza_max >= umbral and clase_principal.lower() != "sana":
         st.divider()
-        st.markdown("### 📋 Plan Recomendado de Tratamiento (Asistente Agrónomo IA)")
+        st.markdown("### 📋 Plan Recomendado de Tratamiento (Asistente Agrónomo IA - Gemini)")
         
         with st.spinner("Consultando recomendaciones agronómicas especializadas..."):
             try:
