@@ -3,4 +3,4 @@ tensorflow
 numpy
 pillow
 openai
-google-genai
+google-generativeai
