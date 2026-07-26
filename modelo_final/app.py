@@ -30,7 +30,7 @@ DEFAULT_UMBRAL = 0.60
 
 
 def generar_recomendacion_ia(enfermedad, probabilidad):
-    """Genera recomendaciones agronómicas probando modelos vigentes con fallback."""
+    """Genera recomendaciones agronómicas probando modelos de Gemini con manejo de errores."""
     if not gemini_disponible:
         return "⚠️ La integración con Gemini no está disponible. Verifica tu API Key en los Secrets de Streamlit."
 
@@ -49,42 +49,37 @@ def generar_recomendacion_ia(enfermedad, probabilidad):
     Mantén un tono profesional, accesible y práctico.
     """
 
-    # Lista de nombres exactos de modelos vigentes
-    candidatos_modelos = [
-        "gemini-1.5-flash",
-        "gemini-1.5-pro",
-        "gemini-1.0-pro"
-    ]
+    # Modelos estándares para probar en orden
+    modelos_a_probar = ["gemini-1.5-flash", "gemini-1.5-pro"]
 
-    # Intentar obtener modelos activos dinámicamente si es posible
+    # Intentar cargar modelos dinámicos si están disponibles
     try:
-        modelos_remotos = []
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                # Quitar el prefijo "models/" si viene incluido
-                nombre_limpio = m.name.replace("models/", "")
-                # Ignorar modelos deprecados conocidos
-                if not any(deprecated in nombre_limpio for deprecated in ["2.5", "0.0.1"]):
-                    modelos_remotos.append(nombre_limpio)
-        if modelos_remotos:
-            candidatos_modelos = modelos_remotos + candidatos_modelos
+        modelos_remotos = [
+            m.name.replace("models/", "") 
+            for m in genai.list_models() 
+            if 'generateContent' in m.supported_generation_methods
+        ]
+        # Filtrar modelos no deseados o de prueba
+        modelos_filtrados = [
+            m for m in modelos_remotos 
+            if not any(bad in m for bad in ["2.5", "0.0.1"])
+        ]
+        if modelos_filtrados:
+            modelos_a_probar = modelos_filtrados + modelos_a_probar
     except Exception:
         pass
 
-    # Recorrer la lista e intentar generar contenido
     ultimo_error = None
-    for nombre_modelo in candidatos_modelos:
+    for nombre_modelo in modelos_a_probar:
         try:
             model = genai.GenerativeModel(nombre_modelo)
             response = model.generate_content(prompt)
             return response.text
-        except Exception as e:
-            ultimo_error = e
+        except Exception as err:
+            ultimo_error = err
             continue
 
-    return f"Error al generar recomendación con Gemini: {ultimo_error}"
-    except Exception as e:
-        return f"Error al seleccionar o consultar el modelo de Gemini: {e}"
+    return f"No se pudo consultar la API de Gemini. Detalle: {ultimo_error}"
 
 @st.cache_resource
 def cargar_modelo_y_config():
