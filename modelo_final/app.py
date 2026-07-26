@@ -23,7 +23,7 @@ DEFAULT_UMBRAL = 0.60
 
 
 def generar_recomendacion_ia(enfermedad, probabilidad):
-    """Genera recomendaciones agronómicas personalizadas mediante Gemini."""
+    """Genera recomendaciones agronómicas con fallback de modelo para evitar cuota agotada."""
     prompt = f"""
     Eres un agrónomo experto en el cultivo de café en Honduras.
     Un modelo de visión por computadora identificó la siguiente afección en una hoja de café:
@@ -39,12 +39,24 @@ def generar_recomendacion_ia(enfermedad, probabilidad):
     Mantén un tono profesional, accesible y práctico.
     """
 
-    # Usar el identificador oficial actualizado para el SDK google-genai
-    response = client.models.generate_content(
-        model="gemini-2.0-flash",
-        contents=prompt
-    )
-    return response.text
+    # Lista de modelos a intentar en orden de preferencia
+    modelos_disponibles = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash"]
+
+    for modelo in modelos_disponibles:
+        try:
+            response = client.models.generate_content(
+                model=modelo,
+                contents=prompt
+            )
+            return response.text
+        except Exception as e:
+            # Si el error es de cuota (429), intenta con el siguiente modelo de la lista
+            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                continue
+            else:
+                raise e
+
+    raise Exception("Se agotó la cuota de consultas gratuitas de la API de Gemini. Por favor, espera 1 minuto e intenta de nuevo.")
 
 
 @st.cache_resource
