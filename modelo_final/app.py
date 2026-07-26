@@ -23,7 +23,7 @@ DEFAULT_UMBRAL = 0.60
 
 
 def generar_recomendacion_ia(enfermedad, probabilidad):
-    """Genera recomendaciones agronómicas personalizadas mediante Gemini Flash."""
+    """Genera recomendaciones agronómicas personalizadas mediante Gemini."""
     prompt = f"""
     Eres un agrónomo experto en el cultivo de café en Honduras.
     Un modelo de visión por computadora identificó la siguiente afección en una hoja de café:
@@ -39,9 +39,9 @@ def generar_recomendacion_ia(enfermedad, probabilidad):
     Mantén un tono profesional, accesible y práctico.
     """
 
-    # CAMBIO AQUÍ: Usar "gemini-1.5-flash" o "gemini-2.0-flash"
+    # Usar el identificador oficial actualizado para el SDK google-genai
     response = client.models.generate_content(
-        model="gemini-1.5-flash",
+        model="gemini-2.0-flash",
         contents=prompt
     )
     return response.text
