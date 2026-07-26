@@ -32,14 +32,14 @@ DEFAULT_UMBRAL = 0.60
 import re
 
 def generar_recomendacion_ia(enfermedad, probabilidad):
-    """Genera recomendaciones agronómicas en español omitiendo el razonamiento interno."""
+    """Genera recomendaciones agronómicas en español omitiendo estrictamente las partes de razonamiento."""
     if not gemini_disponible:
         return "⚠️ La integración con Gemini no está disponible. Verifica tu API Key en los Secrets de Streamlit."
 
     system_instruction = (
         "Eres un agrónomo experto en el cultivo de café en Honduras. "
-        "Responde de forma directa, profesional y estructurada ÚNICAMENTE EN ESPAÑOL. "
-        "No incluyas explicaciones en inglés, ni notas de razonamiento interno, ni borradores."
+        "Tu tarea es responder ÚNICAMENTE en español, de forma directa, profesional y estructurada. "
+        "Está estrictamente prohibido incluir notas de razonamiento, pensamientos internos, borradores o inglés."
     )
 
     prompt = f"""
@@ -54,7 +54,7 @@ def generar_recomendacion_ia(enfermedad, probabilidad):
     3. **Manejo biológico y químico (Contexto Honduras):**
     4. **Advertencias y precauciones inmediatas:**
 
-    Empieza la respuesta directamente con: "Estimado productor,"
+    Empieza la respuesta directamente con: Estimado productor,
     """
 
     modelos_a_probar = ["gemini-1.5-flash", "gemini-1.5-pro"]
@@ -82,18 +82,32 @@ def generar_recomendacion_ia(enfermedad, probabilidad):
                 system_instruction=system_instruction
             )
             response = model.generate_content(prompt)
-            texto_raw = response.text
 
-            # --- FILTRO DE SEGURIDAD PARA REMOVER EL RAZONAMIENTO EN INGLÉS ---
-            # Si el modelo incluyó razonamiento antes del saludo, recortamos todo lo anterior.
-            if "Estimado productor" in texto_raw:
-                texto_limpio = "Estimado productor" + texto_raw.split("Estimado productor", 1)[1]
-                return texto_limpio
-            elif "1. **Descripción" in texto_raw:
-                texto_limpio = "1. **Descripción" + texto_raw.split("1. **Descripción", 1)[1]
-                return texto_limpio
+            # --- EXTRAER ÚNICAMENTE EL TEXTO FINAL IGNORANDO PENSAMIENTOS INTERNOS ---
+            texto_final = ""
+            if hasattr(response, 'candidates') and response.candidates:
+                candidate = response.candidates[0]
+                # Recorrer todas las partes del contenido y omitir aquellas marcadas como 'thought'
+                partes_validas = []
+                for part in candidate.content.parts:
+                    # Si la parte no es un pensamiento/razonamiento explícito, guardamos su texto
+                    if not getattr(part, 'thought', False):
+                        if hasattr(part, 'text') and part.text:
+                            partes_validas.append(part.text)
+                if partes_validas:
+                    texto_final = "".join(partes_validas)
 
-            return texto_raw
+            # Si no se pudo extraer por partes, usar el atributo standard response.text
+            if not texto_final.strip():
+                texto_final = response.text
+
+            # --- RECORTAR POR SEGURIDAD CUALQUIER TEXTO PREVIO AL SALUDO O PRIMER ENCABEZADO ---
+            if "Estimado productor" in texto_final:
+                texto_final = "Estimado productor" + texto_final.split("Estimado productor", 1)[1]
+            elif "1. **Descripción" in texto_final:
+                texto_final = "1. **Descripción" + texto_final.split("1. **Descripción", 1)[1]
+
+            return texto_final.strip()
 
         except Exception as err:
             ultimo_error = err
