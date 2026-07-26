@@ -29,15 +29,16 @@ DEFAULT_IMG_SIZE = (224, 224)
 DEFAULT_UMBRAL = 0.60
 
 
+import re
+
 def generar_recomendacion_ia(enfermedad, probabilidad):
-    """Genera recomendaciones agronómicas estrictamente en español sin razonamiento previo."""
+    """Genera recomendaciones agronómicas en español omitiendo el razonamiento interno."""
     if not gemini_disponible:
         return "⚠️ La integración con Gemini no está disponible. Verifica tu API Key en los Secrets de Streamlit."
 
-    # Instrucción de sistema estricta
     system_instruction = (
         "Eres un agrónomo experto en el cultivo de café en Honduras. "
-        "Responde de forma directa, profesional y ESTRUCTURADA ÚNICAMENTE EN ESPAÑOL. "
+        "Responde de forma directa, profesional y estructurada ÚNICAMENTE EN ESPAÑOL. "
         "No incluyas explicaciones en inglés, ni notas de razonamiento interno, ni borradores."
     )
 
@@ -48,12 +49,12 @@ def generar_recomendacion_ia(enfermedad, probabilidad):
 
     Proporciona el plan de tratamiento siguiendo esta estructura exacta:
 
-    1. **Descripción breve y gravedad de la afección:** (Explica qué es y su impacto).
-    2. **Medidas de control cultural y preventivo:** (Prácticas agrícolas como poda, sombra, nutrición).
-    3. **Manejo biológico y químico (Contexto Honduras):** (Productos recomendados como Abamectina, ingredientes activos y rotación).
-    4. **Advertencias y precauciones inmediatas:** (Medidas de seguridad, periodos de carencia y uso de EPP).
+    1. **Descripción breve y gravedad de la afección:**
+    2. **Medidas de control cultural y preventivo:**
+    3. **Manejo biológico y químico (Contexto Honduras):**
+    4. **Advertencias y precauciones inmediatas:**
 
-    Empieza directamente con el saludo al productor agrícola.
+    Empieza la respuesta directamente con: "Estimado productor,"
     """
 
     modelos_a_probar = ["gemini-1.5-flash", "gemini-1.5-pro"]
@@ -76,19 +77,29 @@ def generar_recomendacion_ia(enfermedad, probabilidad):
     ultimo_error = None
     for nombre_modelo in modelos_a_probar:
         try:
-            # Pasar la instrucción del sistema para forzar el idioma y estilo
             model = genai.GenerativeModel(
                 model_name=nombre_modelo,
                 system_instruction=system_instruction
             )
             response = model.generate_content(prompt)
-            return response.text
+            texto_raw = response.text
+
+            # --- FILTRO DE SEGURIDAD PARA REMOVER EL RAZONAMIENTO EN INGLÉS ---
+            # Si el modelo incluyó razonamiento antes del saludo, recortamos todo lo anterior.
+            if "Estimado productor" in texto_raw:
+                texto_limpio = "Estimado productor" + texto_raw.split("Estimado productor", 1)[1]
+                return texto_limpio
+            elif "1. **Descripción" in texto_raw:
+                texto_limpio = "1. **Descripción" + texto_raw.split("1. **Descripción", 1)[1]
+                return texto_limpio
+
+            return texto_raw
+
         except Exception as err:
             ultimo_error = err
             continue
 
     return f"No se pudo consultar la API de Gemini. Detalle: {ultimo_error}"
-
 @st.cache_resource
 def cargar_modelo_y_config():
     """Carga el modelo TensorFlow (.keras o .h5) y el archivo de configuración JSON."""
