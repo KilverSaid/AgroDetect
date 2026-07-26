@@ -30,36 +30,40 @@ DEFAULT_UMBRAL = 0.60
 
 
 def generar_recomendacion_ia(enfermedad, probabilidad):
-    """Genera recomendaciones agronómicas probando modelos de Gemini con manejo de errores."""
+    """Genera recomendaciones agronómicas estrictamente en español sin razonamiento previo."""
     if not gemini_disponible:
         return "⚠️ La integración con Gemini no está disponible. Verifica tu API Key en los Secrets de Streamlit."
 
+    # Instrucción de sistema estricta
+    system_instruction = (
+        "Eres un agrónomo experto en el cultivo de café en Honduras. "
+        "Responde de forma directa, profesional y ESTRUCTURADA ÚNICAMENTE EN ESPAÑOL. "
+        "No incluyas explicaciones en inglés, ni notas de razonamiento interno, ni borradores."
+    )
+
     prompt = f"""
-    Eres un agrónomo experto en el cultivo de café en Honduras.
     Un modelo de visión por computadora identificó la siguiente afección en una hoja de café:
     - Diagnóstico: {enfermedad}
     - Certidumbre del modelo: {probabilidad*100:.1f}%
 
-    Proporciona un plan de tratamiento claro y estructurado para un productor agrícola local:
-    1. Descripción breve y gravedad de la afección.
-    2. Medidas de control cultural / preventivo.
-    3. Manejo o control biológico / químico recomendado en la región.
-    4. Advertencias o precauciones inmediatas.
+    Proporciona el plan de tratamiento siguiendo esta estructura exacta:
 
-    Mantén un tono profesional, accesible y práctico.
+    1. **Descripción breve y gravedad de la afección:** (Explica qué es y su impacto).
+    2. **Medidas de control cultural y preventivo:** (Prácticas agrícolas como poda, sombra, nutrición).
+    3. **Manejo biológico y químico (Contexto Honduras):** (Productos recomendados como Abamectina, ingredientes activos y rotación).
+    4. **Advertencias y precauciones inmediatas:** (Medidas de seguridad, periodos de carencia y uso de EPP).
+
+    Empieza directamente con el saludo al productor agrícola.
     """
 
-    # Modelos estándares para probar en orden
     modelos_a_probar = ["gemini-1.5-flash", "gemini-1.5-pro"]
 
-    # Intentar cargar modelos dinámicos si están disponibles
     try:
         modelos_remotos = [
             m.name.replace("models/", "") 
             for m in genai.list_models() 
             if 'generateContent' in m.supported_generation_methods
         ]
-        # Filtrar modelos no deseados o de prueba
         modelos_filtrados = [
             m for m in modelos_remotos 
             if not any(bad in m for bad in ["2.5", "0.0.1"])
@@ -72,7 +76,11 @@ def generar_recomendacion_ia(enfermedad, probabilidad):
     ultimo_error = None
     for nombre_modelo in modelos_a_probar:
         try:
-            model = genai.GenerativeModel(nombre_modelo)
+            # Pasar la instrucción del sistema para forzar el idioma y estilo
+            model = genai.GenerativeModel(
+                model_name=nombre_modelo,
+                system_instruction=system_instruction
+            )
             response = model.generate_content(prompt)
             return response.text
         except Exception as err:
