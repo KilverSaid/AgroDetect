@@ -30,9 +30,9 @@ DEFAULT_UMBRAL = 0.60
 
 
 def generar_recomendacion_ia(enfermedad, probabilidad):
-    """Genera recomendaciones agronómicas mediante Gemini 1.5 Flash."""
+    """Genera recomendaciones agronómicas mediante la API de Gemini."""
     if not gemini_disponible:
-        return "⚠️ La integración con Gemini no está disponible. Verifica tu API Key en los Secrets de Streamlit."
+        return "⚠️ La integración con Gemini no está disponible. Verifica tu API Key en Secrets."
 
     prompt = f"""
     Eres un agrónomo experto en el cultivo de café en Honduras.
@@ -49,7 +49,8 @@ def generar_recomendacion_ia(enfermedad, probabilidad):
     Mantén un tono profesional, accesible y práctico.
     """
 
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    # Probar con 'gemini-1.5-flash-latest' que apunta directamente al alias activo
+    model = genai.GenerativeModel('gemini-1.5-flash-latest')
     response = model.generate_content(prompt)
     return response.text
 
