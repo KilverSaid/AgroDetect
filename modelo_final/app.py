@@ -30,7 +30,7 @@ DEFAULT_UMBRAL = 0.60
 
 
 def generar_recomendacion_ia(enfermedad, probabilidad):
-    """Genera recomendaciones agronómicas mediante la API de Gemini."""
+    """Selecciona dinámicamente el modelo Flash disponible en la API Key."""
     if not gemini_disponible:
         return "⚠️ La integración con Gemini no está disponible. Verifica tu API Key en Secrets."
 
@@ -49,11 +49,23 @@ def generar_recomendacion_ia(enfermedad, probabilidad):
     Mantén un tono profesional, accesible y práctico.
     """
 
-    # Probar con 'gemini-1.5-flash-latest' que apunta directamente al alias activo
-    model = genai.GenerativeModel('gemini-1.5-flash-latest')
+    # 1. Obtener la lista de modelos permitidos para tu API Key
+    modelos = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+    
+    # 2. Buscar preferentemente un modelo 'flash' o tomar el primero disponible
+    modelo_elegido = None
+    for m in modelos:
+        if 'flash' in m:
+            modelo_elegido = m
+            break
+    
+    if not modelo_elegido and modelos:
+        modelo_elegido = modelos[0]
+
+    # 3. Generar la respuesta
+    model = genai.GenerativeModel(modelo_elegido)
     response = model.generate_content(prompt)
     return response.text
-
 
 @st.cache_resource
 def cargar_modelo_y_config():
