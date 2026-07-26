@@ -4,18 +4,50 @@ import numpy as np
 import streamlit as st
 import tensorflow as tf
 from PIL import Image
+from openai import OpenAI
 
-# Configuración general de la página Streamlit
+# 1. Configuración de página (SIEMPRE PRIMERA LÍNEA DE STREAMLIT)
 st.set_page_config(
     page_title="AgroDetect — Detección en Café",
     page_icon="🌿",
     layout="centered"
 )
 
+# Inicializar cliente de OpenAI desde Streamlit Secrets
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+
 # Constantes predeterminadas
 DEFAULT_CLASSES = ["sana", "roya", "cercospora", "phoma", "arana_roja", "minador"]
 DEFAULT_IMG_SIZE = (224, 224)
 DEFAULT_UMBRAL = 0.60
+
+
+def generar_recomendacion_ia(enfermedad, probabilidad):
+    """Genera recomendaciones agronómicas personalizadas mediante OpenAI."""
+    prompt = f"""
+    Eres un agrónomo experto en el cultivo de café en Honduras.
+    Un modelo de visión por computadora identificó la siguiente afección en una hoja de café:
+    - Diagnóstico: {enfermedad}
+    - Certidumbre del modelo: {probabilidad*100:.1f}%
+
+    Proporciona un plan de tratamiento claro y estructurado para un productor agrícola local:
+    1. Descripción breve y gravedad de la afección.
+    2. Medidas de control cultural / preventivo.
+    3. Manejo o control biológico / químico recomendado en la región.
+    4. Advertencias o precauciones inmediatas.
+
+    Mantén un tono profesional, accesible y práctico.
+    """
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "Eres un asistente técnico especializado en fitopatología del café."},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.4
+    )
+    return response.choices[0].message.content
 
 
 @st.cache_resource
@@ -28,7 +60,6 @@ def cargar_modelo_y_config():
         "arquitectura_seleccionada": "MobileNetV2"
     }
 
-    # Cargar JSON de configuración si existe
     if os.path.exists("config_app.json"):
         try:
             with open("config_app.json", "r", encoding="utf-8") as f:
@@ -36,7 +67,6 @@ def cargar_modelo_y_config():
         except Exception as e:
             st.warning(f"No se pudo cargar config_app.json: {e}. Usando valores por defecto.")
 
-    # Buscar el modelo en las rutas esperadas
     model_paths = [
         f"agrodetect_{config['arquitectura_seleccionada'].lower()}.keras",
         f"agrodetect_{config['arquitectura_seleccionada'].lower()}.h5",
@@ -55,7 +85,7 @@ def cargar_modelo_y_config():
                 model = tf.keras.models.load_model(path, compile=False)
                 path_usado = path
                 break
-            except Exception as e:
+            except Exception:
                 continue
 
     return model, config, path_usado
@@ -64,16 +94,11 @@ def cargar_modelo_y_config():
 def preprocesar_y_predecir(image, model, config):
     """Preprocesa la imagen de acuerdo a MobileNetV2 y realiza la predicción."""
     img_size = tuple(config["img_size"])
-    
-    # Redimensionar y convertir a array RGB
     image = image.convert("RGB").resize(img_size)
     img_array = np.array(image, dtype=np.float32)
     img_array = np.expand_dims(img_array, axis=0)
 
-    # Preprocesamiento específico de MobileNetV2 (Escala píxeles a [-1, 1])
     img_preprocessed = tf.keras.applications.mobilenet_v2.preprocess_input(img_array)
-
-    # Inferencia
     probs = model.predict(img_preprocessed, verbose=0)[0]
     idx_pred = int(np.argmax(probs))
     confianza = float(probs[idx_pred])
@@ -91,20 +116,16 @@ st.markdown(
 )
 st.divider()
 
-# Cargar Modelo
 model, config, path_usado = cargar_modelo_y_config()
 
 if model is None:
-    st.error(" No se encontró ningún archivo de modelo guardado (.keras o .h5).")
-    st.info(
-        "Asegúrate de colocar tu modelo entrenado (ej. `agrodetect_mobilenetv2.keras`) "
-        "en la misma carpeta que este script `app.py`."
-    )
+    st.error("No se encontró ningún archivo de modelo guardado (.keras o .h5).")
+    st.info("Asegúrate de colocar tu modelo entrenado en la ruta adecuada dentro del repositorio.")
     st.stop()
 
-# Menú lateral explicativo/configuración
+# Menú lateral
 with st.sidebar:
-    st.header(" Configuración")
+    st.header("⚙️ Configuración")
     st.write(f"**Arquitectura:** {config.get('arquitectura_seleccionada', 'MobileNetV2')}")
     st.write(f"**Modelo cargado:** `{path_usado}`")
     
@@ -114,7 +135,7 @@ with st.sidebar:
         max_value=0.95,
         value=float(config["umbral_decision"]),
         step=0.05,
-        help="Si la probabilidad acumulada o principal es menor a este valor, se marcará el resultado como incierto."
+        help="Si la probabilidad principal es menor a este valor, se marcará el resultado como incierto."
     )
     
     st.divider()
@@ -122,7 +143,7 @@ with st.sidebar:
     for c in config["clases"]:
         st.markdown(f"- `{c}`")
 
-# Carga de Imagen por el Usuario
+# Carga de imagen
 uploaded_file = st.file_uploader(
     "Selecciona o toma una fotografía de la hoja de café:",
     type=["jpg", "jpeg", "png"]
@@ -135,44 +156,49 @@ if uploaded_file is not None:
     with col1:
         st.image(image, caption="Imagen ingresada", use_column_width=True)
 
-    # Realizar diagnóstico
     with st.spinner("Analizando hoja de café..."):
         idx_pred, confianza_max, probs = preprocesar_y_predecir(image, model, config)
         clases = config["clases"]
+        clase_principal = clases[idx_pred]
 
     with col2:
-        st.markdown("### Diagnóstico y Porcentajes Encontrados")
+        st.markdown("### Diagnóstico y Porcentajes")
 
-        # Verificar umbral mínimo de certidumbre
+        # Verificar umbral
         if confianza_max < umbral:
-            st.warning(" **Diagnóstico Incierto**")
+            st.warning("⚠️ **Diagnóstico Incierto**")
             st.write(
                 f"El nivel de confianza del modelo ({confianza_max:.1%}) está por debajo del umbral mínimo configurado ({umbral:.1%})."
             )
-            st.info(" **Recomendación:** Se sugiere consultar directamente con un técnico del **IHCAFE**.")
+            st.info("💡 **Recomendación:** Consultar directamente con un técnico del **IHCAFE**.")
         else:
-            clase_principal = clases[idx_pred]
-
             if clase_principal.lower() == "sana":
-                st.success(f" **Hoja Sana** (Certeza: {confianza_max:.1%})")
+                st.success(f"🌱 **Hoja Sana** (Certeza: {confianza_max:.1%})")
                 st.write("La planta no muestra patrones significativos de plagas o enfermedades.")
             else:
-                st.error(f" **Detección Principal: {clase_principal.upper()}** ({confianza_max:.1%})")
+                st.error(f"⚠️ **Detección Principal: {clase_principal.upper()}** ({confianza_max:.1%})")
 
         st.divider()
 
-        # --- PORCENTAJES DE ENFERMEDADES / PLAGAS DETECTADAS EN LA IMAGEN ---
-        st.markdown("#### Porcentaje de presencia detectada en la imagen:")
-
-        # Ordenar de mayor a menor porcentaje
+        # Mostrar desglose de barras
+        st.markdown("#### Porcentaje de presencia detectada:")
         resultados_ordenados = sorted(zip(clases, probs), key=lambda x: x[1], reverse=True)
 
         for nombre_clase, porcentaje in resultados_ordenados:
             pct_val = float(porcentaje)
-            
-            # Formatear el nombre para la vista
             etiqueta = nombre_clase.replace("_", " ").title()
-
-            # Mostrar resultado con barra de progreso
             st.write(f"• **{etiqueta}:** `{pct_val:.2%}`")
             st.progress(pct_val)
+
+    # --- SECCIÓN DE RECOMENDACIÓN TÉCNICA VÍA OPENAI ---
+    # Se despliega en ancho completo debajo de las columnas
+    if confianza_max >= umbral and clase_principal.lower() != "sana":
+        st.divider()
+        st.markdown("### 📋 Plan Recomendado de Tratamiento (Asistente Agrónomo IA)")
+        
+        with st.spinner("Consultando recomendaciones agronómicas especializadas..."):
+            try:
+                recomendacion = generar_recomendacion_ia(clase_principal, confianza_max)
+                st.info(recomendacion)
+            except Exception as e:
+                st.error(f"No se pudo generar la recomendación automatizada: {e}")
